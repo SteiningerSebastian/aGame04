@@ -281,6 +281,7 @@ public class PlanetMeshHandler
     {
         Vector3 v3MiddlePointTriangle = (vertList[face.triangleIndices.v1] + vertList[face.triangleIndices.v2] + vertList[face.triangleIndices.v3]) / 3;
         float distanceToTri = Mathf.Abs((v3MiddlePointTriangle - gObjPosition).magnitude);
+
         if (distanceToTri < detailDistance[3])
         {
             face = DevideFacesRec(face, detailQuality[3]);
