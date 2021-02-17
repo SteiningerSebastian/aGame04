@@ -59,4 +59,7 @@ sysinfo.txt
 crashlytics-build.properties
 
 # Cubemap
-*.cubemap
+#*.cubemap
+CubemapStars.cubemap
+CubemapStarsNamed.cubemap
+CubemapStarsNamedConstellations.cubemap
