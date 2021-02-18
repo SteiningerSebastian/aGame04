@@ -10,7 +10,7 @@ public class CMesh : ICloneable
 {
     public CMesh()
     {
-        
+
     }
 
     public CMesh(Vector3[] vertices, int[] triangles, Vector2[] uv, Vector3[] normals)
@@ -44,7 +44,24 @@ public class CMesh : ICloneable
     }
 }
 
-public struct TriangleIndices
+class SDicKey
+{
+    public Face face;
+    public int detailQuality;
+
+    public SDicKey(Face f, int dQ)
+    {
+        face = f;
+        detailQuality = dQ;
+    }
+    public override int GetHashCode()
+    {
+        string str = String.Join(face.GetHashCode().ToString(), "|" + detailQuality.ToString());
+        return str.GetHashCode();
+    }
+}
+
+public class TriangleIndices : ICloneable, IEquatable<TriangleIndices>
 {
     public int v1;
     public int v2;
@@ -56,9 +73,37 @@ public struct TriangleIndices
         this.v2 = v2;
         this.v3 = v3;
     }
+
+    public object Clone()
+    {
+        return new TriangleIndices(this.v1, this.v2, this.v3);
+    }
+
+    public bool Equals(TriangleIndices other)
+    {
+        if (other.v1 != this.v1)
+        {
+            return false;
+        }
+        if (other.v2 != this.v2)
+        {
+            return false;
+        }
+        if (other.v3 != this.v3)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    public override int GetHashCode()
+    {
+        string str = String.Join(this.v1.ToString(), "|", this.v2.ToString(), "|", this.v3.ToString(), "|");
+        return str.GetHashCode();
+    }
 }
 
-public class Face:ICloneable
+public class Face : ICloneable, IEquatable<Face>
 {
     public TriangleIndices triangleIndices;
     public int levelOfDetail = 0;
@@ -78,10 +123,35 @@ public class Face:ICloneable
 
     public object Clone()
     {
-        return new Face(this.triangleIndices, this.subFaces, this.levelOfDetail);
+        return new Face((TriangleIndices)this.triangleIndices.Clone(), this.subFaces, this.levelOfDetail);
+    }
+
+    public bool Equals(Face other)
+    {
+        if (this.triangleIndices != other.triangleIndices)
+        {
+            return false;
+        }
+
+        if (other.levelOfDetail != this.levelOfDetail)
+        {
+            return false;
+        }
+
+        if (this.subFaces.Count != other.subFaces.Count)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    public override int GetHashCode()
+    {
+        string str = String.Join(this.triangleIndices.GetHashCode().ToString(), "|", this.levelOfDetail.ToString(), "|", this.subFaces.Count.ToString(), "|");
+        return str.GetHashCode();
     }
 }
-
 
 public class PlanetMeshHandler
 {
@@ -90,19 +160,23 @@ public class PlanetMeshHandler
     public float recursionLevel = 2;
     public List<float> detailDistance = new List<float>();
     public List<int> detailRecursionLevel = new List<int>();
+    public Vector3 gObjPosition;
+    public int DictionaryCap = 100000;
+    #endregion
     internal CMesh cMesh = new CMesh();
     private List<Face> faces = new List<Face>();
     private List<int> triList = new List<int>();
     private List<Vector3> vertList = new List<Vector3>();
     private Dictionary<long, int> middlePointIndexCache = new Dictionary<long, int>();
-    public Vector3 gObjPosition;
-    #endregion
+
+    private SuperDictionary<SDicKey, Face> sDicFaces;
 
     public PlanetMeshHandler(float radius, float recursionLevel)
     {
         this.radius = radius;
         this.recursionLevel = recursionLevel;
         this.CreateMesh();
+        sDicFaces = new SuperDictionary<SDicKey, Face>(DictionaryCap);
     }
 
     // return index of point in the middle of p1 and p2
@@ -261,6 +335,7 @@ public class PlanetMeshHandler
             for (int i = 0; i < face.subFaces.Count; i++)
             {
                 face.subFaces[i] = DevideFacesRec(face.subFaces[i], levelOfDetail, index + 1);
+
             }
         }
         else
@@ -282,21 +357,47 @@ public class PlanetMeshHandler
         Vector3 v3MiddlePointTriangle = (vertList[face.triangleIndices.v1] + vertList[face.triangleIndices.v2] + vertList[face.triangleIndices.v3]) / 3;
         float distanceToTri = Mathf.Abs((v3MiddlePointTriangle - gObjPosition).magnitude);
 
-        if (distanceToTri < detailDistance[3])
+        if (distanceToTri < detailDistance[2])
         {
-            face = DevideFacesRec(face, detailQuality[3]);
-        }
-        else if (distanceToTri < detailDistance[2])
-        {
-            face = DevideFacesRec(face, detailQuality[2]);
+            var sDicKey = new SDicKey(face, detailQuality[2]);
+            if (sDicFaces.ContainsKey(sDicKey))
+            {
+                face = (Face)sDicFaces[sDicKey].Clone();
+            }
+            else
+            {
+                Face faceN = DevideFacesRec(face, detailQuality[2]);
+                sDicFaces.Add(sDicKey, (Face)faceN.Clone());
+                face = faceN;
+            }
         }
         else if (distanceToTri < detailDistance[1])
         {
-            face = DevideFacesRec(face, detailQuality[1]);
+            var sDicKey = new SDicKey(face, detailQuality[1]);
+            if (sDicFaces.ContainsKey(sDicKey))
+            {
+                face = (Face)sDicFaces[sDicKey].Clone();
+            }
+            else
+            {
+                Face faceN = DevideFacesRec(face, detailQuality[1]);
+                sDicFaces.Add(sDicKey, (Face)faceN.Clone());
+                face = faceN;
+            }
         }
         else if (distanceToTri < detailDistance[0])
         {
-            face = DevideFacesRec(face, detailQuality[0]);
+            var sDicKey = new SDicKey(face, detailQuality[0]);
+            if (sDicFaces.ContainsKey(sDicKey))
+            {
+                face = (Face)sDicFaces[sDicKey].Clone();
+            }
+            else
+            {
+                Face faceN = DevideFacesRec(face, detailQuality[0]);
+                sDicFaces.Add(sDicKey, (Face)faceN.Clone());
+                face = faceN;
+            }
         }
         else
         {
@@ -348,18 +449,18 @@ public class PlanetGenerator : MonoBehaviour
 {
     public float radius = 1f;
     public int recursionLevel = 3;
-    public float updateThreshold = 1f;
+    public float updateThresholdS = 0.2f;
     public GameObject gObj;
     private Vector3 gObjPosition;
     private Vector3 gObjPositionOld;
-    public float distanceDetail1 = 10f;
-    public float distanceDetail2 = 5f;
-    public float distanceDetail3 = 3f;
-    public float distanceDetail4 = 1f;
-    public int qualityDetail1 = 1;
-    public int qualityDetail2 = 1;
-    public int qualityDetail3 = 1;
-    public int qualityDetail4 = 1;
+    public float distanceDetailS1 = 10f;
+    public float distanceDetailS2 = 5f;
+    public float distanceDetailS3 = 3f;
+    public float distanceDetailSur1 = 3f;
+    public int qualityDetailS1 = 1;
+    public int qualityDetailS2 = 1;
+    public int qualityDetailS3 = 1;
+    public int qualityDetailSur1 = 1;
     bool updateMesh = false;
     internal CMesh cMesh;
     private PlanetMeshHandler planetMeshHandler;
@@ -367,17 +468,17 @@ public class PlanetGenerator : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        gObjPositionOld=gObj.transform.position - Vector3.one - new Vector3(updateThreshold, updateThreshold, updateThreshold);
+        gObjPositionOld = gObj.transform.position - Vector3.one - new Vector3(updateThresholdS, updateThresholdS, updateThresholdS);
         gObjPosition = gObj.transform.position;
         planetMeshHandler = new PlanetMeshHandler(radius, recursionLevel);
-        planetMeshHandler.detailDistance.Add(distanceDetail1);
-        planetMeshHandler.detailDistance.Add(distanceDetail2);
-        planetMeshHandler.detailDistance.Add(distanceDetail3);
-        planetMeshHandler.detailDistance.Add(distanceDetail4);
-        planetMeshHandler.detailRecursionLevel.Add(qualityDetail1);
-        planetMeshHandler.detailRecursionLevel.Add(qualityDetail2);
-        planetMeshHandler.detailRecursionLevel.Add(qualityDetail3);
-        planetMeshHandler.detailRecursionLevel.Add(qualityDetail4);
+        planetMeshHandler.detailDistance.Add(distanceDetailS1);
+        planetMeshHandler.detailDistance.Add(distanceDetailS2);
+        planetMeshHandler.detailDistance.Add(distanceDetailS3);
+        planetMeshHandler.detailDistance.Add(distanceDetailSur1);
+        planetMeshHandler.detailRecursionLevel.Add(qualityDetailS1);
+        planetMeshHandler.detailRecursionLevel.Add(qualityDetailS2);
+        planetMeshHandler.detailRecursionLevel.Add(qualityDetailS3);
+        planetMeshHandler.detailRecursionLevel.Add(qualityDetailSur1);
 
         cMesh = planetMeshHandler.cMesh;
 
@@ -419,7 +520,7 @@ public class PlanetGenerator : MonoBehaviour
     {
         while (true)
         {
-            if (Math.Abs((gObjPosition - gObjPositionOld).magnitude) >= updateThreshold)
+            if (Math.Abs((gObjPosition - gObjPositionOld).magnitude) >= updateThresholdS)
             {
                 gObjPositionOld = gObjPosition;
                 planetMeshHandler.UpdateCMash();
